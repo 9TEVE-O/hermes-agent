@@ -4,6 +4,7 @@ from typing import Any
 
 import anthropic
 
+from abel.als_parser import get_session_quality_report, parse_als
 from abel.session_analyzer import (
     analyze_session_settings,
     calculate_file_size,
@@ -23,12 +24,14 @@ File → Export Audio/Video with Cmd+Shift+R on Mac / Ctrl+Shift+R on Windows).
 - Ableton Live processes audio internally at 32-bit float regardless of the project bit depth setting.
 - The Ableton Live defaults are 44.1 kHz sample rate and 24-bit depth.
 - Never suggest third-party DAW workflows; keep all advice specific to Ableton Live.
+- You can read and analyse actual Ableton .als project files when the user provides a file path.
 
 When answering questions:
 1. Use the provided tools to fetch accurate data before explaining.
-2. Explain the WHY behind recommendations, not just the numbers.
-3. Be concise and practical — producers need actionable guidance.
-4. Always ground your answer in Ableton Live's specific behavior."""
+2. If the user mentions a .als file path, use parse_als_file or get_session_quality_report first.
+3. Explain the WHY behind recommendations, not just the numbers.
+4. Be concise and practical — producers need actionable guidance.
+5. Always ground your answer in Ableton Live's specific behavior."""
 
 TOOLS = [
     {
@@ -128,6 +131,40 @@ TOOLS = [
             "required": ["use_case"],
         },
     },
+    {
+        "name": "parse_als_file",
+        "description": (
+            "Parse an Ableton Live Set (.als) file from disk and extract session metadata: "
+            "tracks, tempo, time signature, clip counts, audio clip native sample rates, and loaded devices/plugins."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Absolute or relative path to the .als file on disk",
+                }
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "get_session_quality_report",
+        "description": (
+            "Parse an Ableton .als file and return a quality-focused report: detects sample rate mismatches "
+            "between audio clips, high track counts, and other issues with Ableton-specific fixes."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Absolute or relative path to the .als file on disk",
+                }
+            },
+            "required": ["path"],
+        },
+    },
 ]
 
 TOOL_DISPATCH: dict[str, Any] = {
@@ -136,6 +173,8 @@ TOOL_DISPATCH: dict[str, Any] = {
     "analyze_session_settings": analyze_session_settings,
     "calculate_file_size": calculate_file_size,
     "get_use_case_recommendation": get_use_case_recommendation,
+    "parse_als_file": parse_als,
+    "get_session_quality_report": get_session_quality_report,
 }
 
 
