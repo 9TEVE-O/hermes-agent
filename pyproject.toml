@@ -73,6 +73,12 @@ rl = [
   "wandb>=0.15.0,<1",
 ]
 yc-bench = ["yc-bench @ git+https://github.com/collinear-ai/yc-bench.git ; python_version >= '3.12'"]
+abel = [
+  # Spotify OAuth2 + Web API (music taste profile)
+  "spotipy>=2.24.0,<3",
+  # Audio file tag reading: ID3, MP4, FLAC, OGG, WAV, AIFF (music taste profile)
+  "mutagen>=1.47.0,<2",
+]
 all = [
   "hermes-agent[modal]",
   "hermes-agent[daytona]",
@@ -96,6 +102,7 @@ all = [
   "hermes-agent[dingtalk]",
   "hermes-agent[feishu]",
   "hermes-agent[mistral]",
+  "hermes-agent[abel]",
 ]
 
 [project.scripts]
@@ -107,7 +114,7 @@ hermes-acp = "acp_adapter.entry:main"
 py-modules = ["run_agent", "model_tools", "toolsets", "batch_runner", "trajectory_compressor", "toolset_distributions", "cli", "hermes_constants", "hermes_state", "hermes_time", "hermes_logging", "rl_cli", "utils"]
 
 [tool.setuptools.packages.find]
-include = ["agent", "tools", "tools.*", "hermes_cli", "gateway", "gateway.*", "cron", "acp_adapter", "plugins", "plugins.*"]
+include = ["agent", "tools", "tools.*", "hermes_cli", "gateway", "gateway.*", "cron", "acp_adapter", "plugins", "plugins.*", "abel", "abel.*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
