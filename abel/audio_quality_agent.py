@@ -14,7 +14,7 @@ from abel.session_analyzer import (
 
 MODEL = "claude-opus-4-7"
 
-SYSTEM_PROMPT = """You are Abel, an expert offline AI copilot for Ableton Live. \
+_BASE_SYSTEM = """You are Abel, an expert offline AI copilot for Ableton Live. \
 You specialize in audio quality settings — sample rate, bit depth, file size, and session optimization.
 
 Your knowledge is Ableton-specific:
@@ -28,9 +28,10 @@ File → Export Audio/Video with Cmd+Shift+R on Mac / Ctrl+Shift+R on Windows).
 When answering questions:
 1. Use the provided tools to fetch accurate data before explaining.
 2. If the user mentions a .als file path, use parse_als_file or get_session_quality_report first.
-3. Explain the WHY behind recommendations, not just the numbers.
-4. Be concise and practical — producers need actionable guidance.
-5. Always ground your answer in Ableton Live's specific behavior."""
+3. When a user taste profile is available, tailor every recommendation to their genre/BPM context.
+4. Explain the WHY behind recommendations, not just the numbers.
+5. Be concise and practical — producers need actionable guidance.
+6. Always ground your answer in Ableton Live's specific behavior."""
 
 TOOLS = [
     {
@@ -120,16 +121,21 @@ TOOLS = [
     },
     {
         "name": "get_session_quality_report",
-        "description": "Parse an Ableton .als file and return a quality-focused report: detects sample rate mismatches, high track counts, and other issues with Ableton-specific fixes.",
+        "description": "Parse an Ableton .als file and return a quality-focused report: detects sample rate mismatches, high track counts, and issues with Ableton-specific fixes.",
         "input_schema": {
             "type": "object",
             "properties": {"path": {"type": "string", "description": "Absolute or relative path to the .als file"}},
             "required": ["path"],
         },
     },
+    {
+        "name": "get_user_taste_profile",
+        "description": "Return the user's music taste profile — genres, BPM range, energy level, valence, top artists, and production style — built from their Spotify, iTunes, and/or local music libraries.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
 ]
 
-TOOL_DISPATCH: dict[str, Any] = {
+_TOOL_DISPATCH: dict[str, Any] = {
     "get_sample_rate_info": get_sample_rate_info,
     "get_bit_depth_info": get_bit_depth_info,
     "analyze_session_settings": analyze_session_settings,
@@ -140,8 +146,24 @@ TOOL_DISPATCH: dict[str, Any] = {
 }
 
 
-def run_tool(name: str, tool_input: dict[str, Any]) -> str:
-    fn = TOOL_DISPATCH.get(name)
+def _build_system(config: AbelConfig) -> str:
+    from abel.music_profile import build_taste_summary, get_or_build_profile
+
+    system = _BASE_SYSTEM
+    profile = get_or_build_profile(config)
+    if profile:
+        system += f"\n\n## User Music Profile\n{build_taste_summary(profile)}"
+    return system
+
+
+def run_tool(name: str, tool_input: dict[str, Any], config: AbelConfig) -> str:
+    if name == "get_user_taste_profile":
+        from abel.music_profile import get_or_build_profile
+        result = get_or_build_profile(config) or {
+            "error": "No taste profile found. Run: python -m abel.main --setup-profile"
+        }
+        return json.dumps(result, indent=2)
+    fn = _TOOL_DISPATCH.get(name)
     if fn is None:
         return json.dumps({"error": f"Unknown tool: {name}"})
     return json.dumps(fn(**tool_input), indent=2)
@@ -153,14 +175,15 @@ def ask_abel_streaming(question: str, config: AbelConfig | None = None) -> None:
     if config.mode == "offline":
         _ask_offline(question, config)
     else:
-        _ask_online(question)
+        _ask_online(question, config)
 
 
-def _ask_online(question: str) -> None:
+def _ask_online(question: str, config: AbelConfig) -> None:
     """Claude API streaming with tool use loop."""
     import anthropic
 
-    client = anthropic.Anthropic()
+    client = anthropic.Anthropic(api_key=config.api_key)
+    system = _build_system(config)
     messages: list[dict] = [{"role": "user", "content": question}]
 
     while True:
@@ -168,7 +191,7 @@ def _ask_online(question: str) -> None:
             model=MODEL,
             max_tokens=4096,
             thinking={"type": "adaptive"},
-            system=SYSTEM_PROMPT,
+            system=system,
             tools=TOOLS,
             messages=messages,
         ) as stream:
@@ -184,7 +207,7 @@ def _ask_online(question: str) -> None:
 
         messages.append({"role": "assistant", "content": response.content})
         tool_results = [
-            {"type": "tool_result", "tool_use_id": tu.id, "content": run_tool(tu.name, tu.input)}
+            {"type": "tool_result", "tool_use_id": tu.id, "content": run_tool(tu.name, tu.input, config)}
             for tu in tool_uses
         ]
         messages.append({"role": "user", "content": tool_results})
@@ -198,8 +221,8 @@ def _ask_offline(question: str, config: AbelConfig) -> None:
         print(
             "\n[Offline mode requires Ollama]\n"
             "  pip install ollama\n"
-            "  ollama serve          # start the local server\n"
-            "  ollama pull llama3.1  # download a model\n"
+            "  ollama serve\n"
+            "  ollama pull llama3.1\n"
         )
         return
 
@@ -208,8 +231,7 @@ def _ask_offline(question: str, config: AbelConfig) -> None:
 
     conn = get_knowledge_db(config.db_path)
     rag = build_rag_context(conn, question)
-
-    system = SYSTEM_PROMPT
+    system = _build_system(config)
     if rag:
         system += f"\n\n## Local Knowledge Base\n{rag}"
 

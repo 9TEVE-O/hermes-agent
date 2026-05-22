@@ -43,6 +43,14 @@ def create_tables(conn: sqlite3.Connection) -> None:
             tags        TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS music_sources (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            source      TEXT NOT NULL UNIQUE,
+            last_sync   TEXT,
+            track_count INTEGER DEFAULT 0,
+            status      TEXT DEFAULT 'pending'
+        );
+
         CREATE VIRTUAL TABLE IF NOT EXISTS devices_fts USING fts5(
             name, description, use_cases, tips,
             device_id UNINDEXED
