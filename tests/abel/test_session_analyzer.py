@@ -112,3 +112,73 @@ class TestUseCaseRecommendations:
         result = get_use_case_recommendation("djing")
         assert "error" in result
         assert "valid_use_cases" in result
+
+
+class TestToolArgumentNormalization:
+    """Model-supplied tool args arrive as ints or strings; both must resolve.
+
+    Regression: get_bit_depth_info("24") used to return an error whose own
+    valid_bit_depths list contained 24, which reads as self-contradictory to
+    the model and invites it to retry the identical call.
+    """
+
+    @pytest.mark.parametrize("value", [16, "16", " 16 ", "16bit", "16-bit"])
+    def test_sixteen_bit_variants_resolve(self, value):
+        assert get_bit_depth_info(value)["bit_depth"] == 16
+
+    @pytest.mark.parametrize("value", [24, "24", "24bit", "24-bit"])
+    def test_twenty_four_bit_variants_resolve(self, value):
+        assert get_bit_depth_info(value)["bit_depth"] == 24
+
+    @pytest.mark.parametrize("value", [32, "32", "32f", "32F", "32-bit float"])
+    def test_thirty_two_bit_maps_to_float_key(self, value):
+        assert get_bit_depth_info(value)["bit_depth"] == "32f"
+
+    @pytest.mark.parametrize("value", [64, "64", "64f", "64-bit float"])
+    def test_sixty_four_bit_maps_to_float_key(self, value):
+        assert get_bit_depth_info(value)["bit_depth"] == "64f"
+
+    @pytest.mark.parametrize("value", [8, "gibberish", None, True])
+    def test_genuinely_invalid_bit_depth_still_errors(self, value):
+        assert "error" in get_bit_depth_info(value)
+
+    @pytest.mark.parametrize(
+        "value", [44100, "44100", 44100.0, "44.1kHz", "44.1 kHz", "44,100"]
+    )
+    def test_sample_rate_variants_resolve(self, value):
+        assert get_sample_rate_info(value)["sample_rate"] == 44100
+
+    @pytest.mark.parametrize("value", [48000, "48000", "48kHz", "48k"])
+    def test_forty_eight_k_variants_resolve(self, value):
+        assert get_sample_rate_info(value)["sample_rate"] == 48000
+
+    @pytest.mark.parametrize("value", ["abc", 9999, None])
+    def test_genuinely_invalid_sample_rate_still_errors(self, value):
+        assert "error" in get_sample_rate_info(value)
+
+    @pytest.mark.parametrize(
+        "value",
+        ["music_production", "Music Production", "MUSIC_PRODUCTION", "music-production"],
+    )
+    def test_use_case_variants_resolve(self, value):
+        assert get_use_case_recommendation(value)["use_case"] == "music_production"
+
+    def test_genuinely_invalid_use_case_still_errors(self):
+        assert "error" in get_use_case_recommendation("polka_mastering")
+
+    def test_normalized_input_matches_canonical_output(self):
+        assert analyze_session_settings("48kHz", "24") == analyze_session_settings(48000, 24)
+
+    def test_file_size_accepts_normalized_input(self):
+        loose = calculate_file_size(60, "44.1kHz", "32-bit float")
+        canonical = calculate_file_size(60, 44100, "32f")
+        assert loose == canonical
+        assert "error" not in loose
+
+    def test_error_message_never_lists_the_rejected_value_as_valid(self):
+        """A rejected value must not appear in the tool's own valid list."""
+        for bad in [8, 12, "gibberish"]:
+            result = get_bit_depth_info(bad)
+            assert "error" in result
+            normalized = result["error"].split(": ", 1)[1]
+            assert normalized not in [str(k) for k in result["valid_bit_depths"]]
